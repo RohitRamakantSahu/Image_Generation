@@ -13,6 +13,9 @@ os.environ['AWS_ACCESS_KEY_ID'] = ''
 os.environ['AWS_SECRET_ACCESS_KEY'] = ''
 os.environ['AWS_DEFAULT_REGION'] = ''
 
+def get_font_name(font_path):
+    return os.path.basename(font_path)
+
 def generate_ad_template(heading, desc, cta, contact, logo_bytes, product_bytes):
     # Convert bytes to file-like objects
     logo_file = io.BytesIO(logo_bytes)
@@ -229,7 +232,7 @@ def generate_ad_template(heading, desc, cta, contact, logo_bytes, product_bytes)
                     text_x = x
                     text_y = y + i * (line_height + gap)
                     draw.text((text_x, text_y), line, fill=text_color, font=font)  # Change contact text color to highlight color
-                drawn_elements_info[key] = {"size": (max_line_width, text_y + line_height - y), "coordinates": (x, y)}
+                drawn_elements_info[key] = {"size": (max_line_width, text_y + line_height - y), "coordinates": (x, y), "font_size": font.size}
 
                 return (x - icon_size - 5, y, x + max_line_width, y + total_height), drawn_elements_info
 
@@ -531,8 +534,6 @@ def generate_ad_template(heading, desc, cta, contact, logo_bytes, product_bytes)
             sampled_background_rgb = tuple(sampled_background_color[:3])
             complementary_color = get_complementary_color(sampled_background_rgb)
 
-            
-
             if elem_type == "text":
                 max_width = int(pos[2] * width)
                 max_height = int(pos[3] * height)
@@ -541,19 +542,15 @@ def generate_ad_template(heading, desc, cta, contact, logo_bytes, product_bytes)
                     additional_size = font[1] if len(font) > 1 else 0
                     adjusted_font = adjust_font_size_based_on_space(draw, text, font[0], max_width, max_height, max_font_size, additional_size)
                     text_color = (255, 255, 255)
-                    #print(f"Heading text color: {text_color}")
                 elif key == "desc_first_word":
                     adjusted_font = ImageFont.truetype(font[0], 40)
                     text_color = (255, 255, 255)
-                    #print(f"Description text color: {text_color}")
                 elif key == "contact":
                     adjusted_font = ImageFont.truetype(font[0], 50)
                     text_color = (255, 255, 255)
-                    #print(f"Contact text color: {text_color}")
                 else:
                     adjusted_font = ImageFont.truetype(font[0], 40)
                     text_color = (255, 255, 255)
-                    #print(f"Other text color: {text_color}")
 
                 wrapped_text = wrap_text(text, 30, draw, adjusted_font)[:6]
                 if key == "desc_first_word":
@@ -561,7 +558,6 @@ def generate_ad_template(heading, desc, cta, contact, logo_bytes, product_bytes)
                 elif key == "cta":
                     cta_background_color = get_complementary_color(sampled_background_rgb)
                     cta_text_color = (255, 255, 255)
-                    #print(f"CTA button color: {cta_background_color}, CTA text color: {cta_text_color}")
                     box, elem_info = draw_element(draw, key, pos[:2], pos[2:], '\n'.join(wrapped_text), adjusted_font, element_type=elem_type, cta_shape=shapes[1], text_color=cta_text_color, background_color=cta_background_color)
                 elif key == "contact":
                     box, elem_info = draw_element(draw, key, pos[:2], pos[2:], '\n'.join(wrapped_text), adjusted_font, element_type=elem_type, cta_shape="rectangle", text_color=contact_color, mobile_icon=mobile_icon)
@@ -597,10 +593,10 @@ def generate_ad_template(heading, desc, cta, contact, logo_bytes, product_bytes)
             print(f"Failed to save template image {template_image_path}.")
 
         try:
-            s3_client.upload_file(template_image_path, bucket_name, template_image_path,ExtraArgs={'ACL': 'public-read'})
+            s3_client.upload_file(template_image_path, bucket_name, template_image_path, ExtraArgs={'ACL': 'public-read'})
             template_url = f"https://{bucket_name}.s3.amazonaws.com/{template_image_path}"
             template_urls.append(template_url)
-            #print(f"Template image {template_image_path} uploaded to S3 successfully.")
+            print(f"Template image {template_image_path} uploaded to S3 successfully.")
         except NoCredentialsError:
             print("Credentials not available for S3 upload.")
 
@@ -609,13 +605,33 @@ def generate_ad_template(heading, desc, cta, contact, logo_bytes, product_bytes)
         desc_font_size = adjusted_font.size if 'desc_first_word' in drawn_elements_info else None
 
         layout_info = {
-            "layout_number": i + 1,
-            "background_url": background_url,
-            "template_url": template_url,
-            "title_font_size": title_font_size,
-            "cta_font_size": cta_font_size,
-            "desc_font_size": desc_font_size,
-            "drawn_elements_info": drawn_elements_info
+            "id": str(i + 1),
+            "bgcolor": f"{chosen_colors[0]},{chosen_colors[1]}",
+            "imagelayoutsize": f"{width}x{height}",
+            "logoUrl": background_url,
+            "imageURL": template_url,
+            "aiModel": "AI-Model-Name",
+            "logoCoordinates": f"{drawn_elements_info['logo']['coordinates'][0]},{drawn_elements_info['logo']['coordinates'][1]}",
+            "logoHeight": drawn_elements_info['logo']['size'][1],
+            "logoWidth": drawn_elements_info['logo']['size'][0],
+            "title": heading,
+            "titlePosition": f"{drawn_elements_info['heading']['coordinates'][0]},{drawn_elements_info['heading']['coordinates'][1]}",
+            "fontstyle": get_font_name(font_path_heading),
+            "fontSize": title_font_size,
+            "description": desc,
+            "descriptionPosition": f"{drawn_elements_info['desc_first_word']['coordinates'][0]},{drawn_elements_info['desc_first_word']['coordinates'][1]}",
+            "descriptionFontstyle": get_font_name(font_path_desc),
+            "descriptionFontSize": desc_font_size,
+            "ctaButtonText": cta,
+            "ctaStyle": shapes[1],
+            "ctaPosition": f"{drawn_elements_info['cta']['coordinates'][0]},{drawn_elements_info['cta']['coordinates'][1]}",
+            "ctaFontSize": cta_font_size,
+            "ctaButtonHeight": drawn_elements_info['cta_button']['size'][1],
+            "ctaButtonWidth": drawn_elements_info['cta_button']['size'][0],
+            "phoneNumberText": contact,
+            "phoneNumberPosition": f"{drawn_elements_info['contact']['coordinates'][0]},{drawn_elements_info['contact']['coordinates'][1]}",
+            "phoneNumberFontStyle": get_font_name(font_path_contact),
+            "phoneNumberSize": drawn_elements_info['contact']['font_size']
         }
 
         layouts_info.append(layout_info)
@@ -623,8 +639,6 @@ def generate_ad_template(heading, desc, cta, contact, logo_bytes, product_bytes)
         print(f"Layout {i + 1} - Title font size: {title_font_size}, CTA font size: {cta_font_size}, Description font size: {desc_font_size}")
 
         empty_spaces = find_empty_spaces(adjusted_boxes, width, height)
-        #print(f"Empty spaces in layout {i + 1}: {empty_spaces}")
         print(f"Drawn elements info for layout {i + 1}: {drawn_elements_info}")
 
     return layouts_info
-
